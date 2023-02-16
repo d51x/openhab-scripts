@@ -1,0 +1,25 @@
+var itemPrefix = 'state_';
+
+function changeItemStatus(thingUid, status) {
+  let name = itemPrefix + thingUid;
+  let item = items.getItem(name, true);
+  if (item !== undefined && item != null) {
+    //item.sendCommand(status);
+    item.sendCommandIfDifferent(status);
+  }  
+} 
+
+function main() {
+  let t = Date.now();
+  things.getThings().forEach(th => {
+    let id = th.rawThing.getUID().getId();
+    if (th.status == "OFFLINE") {
+      changeItemStatus(id, "OFF");
+    } else if (th.status == "ONLINE") {
+      changeItemStatus(id, "ON");
+    }
+  });
+  console.debug("duration:", Date.now() - t, "ms"); 
+}
+
+main();
