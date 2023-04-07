@@ -1,0 +1,124 @@
+/* ECMAScript (ECMAScript 262 Edition 11) */
+
+var { actions, metadata } = require('openhab');
+var timers = cache.private.get('timers');
+if (timers === null) {
+  timers = {};
+  cache.private.put('timers', timers);
+}
+var defItem = items.getItem('defaultUnavailableDeviceReminderTime', true);
+var defaultRemindTime = "30m";
+
+var metadataKey = "remindTime";
+var metadataName = "deviceName";
+
+//console.log(timers);
+
+function sendOnline(s) {
+  let message = "✅ Устройство " + s + " снова доступно";
+  items.getItem('vTelegramMessage').sendCommand(message);   
+  console.log(message);
+}
+
+function sendOffline(s) {
+  let message = "❌ Устройство " + s + " не в сети";
+  items.getItem('vTelegramMessage').sendCommand(message);  
+  console.log(message);
+}
+
+toDateTime = function(item) {
+  defaultRemindTime = (defItem === null || defItem.state.toString() === "") ? "30m" : defItem.state.toString();
+
+  var when = item.getMetadataValue(metadataKey);
+  if (when === null || when === " ") {
+    when = defaultRemindTime;
+  }
+
+  //console.log("item -> ", when, " defaultRemindTime = ", defaultRemindTime);
+  var Duration = Java.type("java.time.Duration");
+  var ZonedDateTime = Java.type("java.time.ZonedDateTime");
+  
+  var dt = null;
+  var dur = null;
+
+  var regex = new RegExp(/[\d]+[d|h|m|s|z]/gi);
+  var numMatches = 0;
+  var part = null;
+  
+  var params = { "d": 0, "h": 0, "m":0, "s":0, "z":0 };
+  while (null != (part=regex.exec(when))) {
+    numMatches++;
+
+    var scale = part[0].slice(-1).toLowerCase();
+    var value = Number(part[0].slice(0, part[0].length-1));
+    params[scale] = value;
+  }
+  
+  if (numMatches === 0) {
+    console.warn("Could not parse any time information from '" + when +"'. Examples of valid string: '8h', '2d8h5s200z', '3d 7m'.");
+  } else {
+    dur = Duration.ofDays(params["d"]).plusHours(params["h"]).plusMinutes(params["m"]).plusSeconds(params["s"]).plusMillis(params["z"]);
+  }
+  
+  if (dur !== null) {
+    dt = ZonedDateTime.now().plus(dur);
+  }  
+  return dt;
+}
+
+function timerOver(key, item) {
+  let device = getDeviceName(item);
+  sendOffline(device);
+  console.log(item.name);
+  if (key in timers) {
+    timers[key]["timer"].reschedule(toDateTime(item));
+  }
+}
+
+function startTimer(key, item) {
+  if (key in timers) {
+    // timer exists
+    // timers[key]["timer"].reschedule(now.plusSeconds(20));
+  } else {
+    // create timer
+    var timer = actions.ScriptExecution.createTimer('Timer_' + key, toDateTime(item), function() {timerOver(key, item)});
+    timers[key] = {"timer": timer};
+    cache.private.put('timers', timers);
+  }
+}
+
+function stopTimer(key) {
+  if (key in timers) {
+    timers[key]["timer"].cancel();
+    delete timers[key];
+    cache.private.put('timers', timers);
+  }
+}
+
+getDeviceName = function(item) {
+  let device = item.getMetadataValue(metadataName); 
+  if (device === null || device === "" || device === " ") {
+    return item.label
+  } else {
+    return device;
+  }
+}
+
+function main() {
+
+  //console.log(timers);
+  let item = items.getItem(event.itemName);
+  let device = getDeviceName(item);
+  console.log("item ", item.label, " from ", event.oldItemState, " to ", event.itemState);
+ 
+  if (event.oldItemState.toString() == 'OFF' && event.itemState.toString() == 'ON') {
+    stopTimer(event.itemName);
+    sendOnline(device);
+  } else if (event.oldItemState.toString() == 'ON' && event.itemState.toString() == 'OFF') {
+    sendOffline(device);  
+    startTimer(event.itemName, item);
+    console.log(item.name);
+  }
+}
+
+main();
