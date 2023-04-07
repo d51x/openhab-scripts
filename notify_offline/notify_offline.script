@@ -1,5 +1,6 @@
 /* ECMAScript (ECMAScript 262 Edition 11) */
 
+
 var { actions, metadata } = require('openhab');
 var timers = cache.private.get('timers');
 if (timers === null) {
